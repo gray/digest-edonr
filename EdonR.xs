@@ -5,7 +5,7 @@
 #include "XSUB.h"
 #include "ppport.h"
 
-#include "src/Edon-R_opt.c"
+#include "src/edonr.c"
 
 typedef hashState *Digest__EdonR;
 
