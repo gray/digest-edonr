@@ -25,33 +25,6 @@ our @EXPORT_OK = qw(
     edonr_512 edonr_512_hex edonr_512_base64
 );
 
-# TODO: convert to C.
-sub edonr_224_hex  { unpack 'H*', edonr_224(@_) }
-sub edonr_256_hex  { unpack 'H*', edonr_256(@_) }
-sub edonr_384_hex  { unpack 'H*', edonr_384(@_) }
-sub edonr_512_hex  { unpack 'H*', edonr_512(@_) }
-
-sub edonr_224_base64 {
-    my $b64 = MIME::Base64::encode(edonr_224(@_), '');
-    $b64 =~ s/=+$//g;
-    return $b64;
-}
-sub edonr_256_base64 {
-    my $b64 = MIME::Base64::encode(edonr_256(@_), '');
-    $b64 =~ s/=+$//g;
-    return $b64;
-}
-sub edonr_384_base64 {
-    my $b64 = MIME::Base64::encode(edonr_384(@_), '');
-    $b64 =~ s/=+$//g;
-    return $b64;
-}
-sub edonr_512_base64 {
-    my $b64 = MIME::Base64::encode(edonr_512(@_), '');
-    $b64 =~ s/=+$//g;
-    return $b64;
-}
-
 sub add_bits {
     my ($self, $data, $bits) = @_;
     if (2 == @_) {
