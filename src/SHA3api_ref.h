@@ -8,6 +8,11 @@ typedef unsigned long long u_int64_t;
 #include <sys/types.h>
 #endif
 
+#ifdef WIN32
+typedef unsigned __int64 u_int64_t;
+typedef unsigned __int32 u_int32_t;
+#endif
+
 // General SHA-3 definitions
 typedef unsigned char BitSequence;
 typedef u_int64_t DataLength; // a typical 64-bit value
