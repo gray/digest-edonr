@@ -4,13 +4,14 @@
 #if defined( _MSC_VER )
 typedef unsigned long u_int32_t;
 typedef unsigned long long u_int64_t;
+#elif defined(WIN32)
+typedef unsigned __int32 u_int32_t;
+typedef unsigned __int64 u_int64_t;
+#elif defined(sun) && (defined(__svr4__) || defined(__SVR4))
+typedef uint32_t u_int32_t;
+typedef uint64_t u_int64_t;
 #else
 #include <sys/types.h>
-#endif
-
-#ifdef WIN32
-typedef unsigned __int64 u_int64_t;
-typedef unsigned __int32 u_int32_t;
 #endif
 
 // General SHA-3 definitions
