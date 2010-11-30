@@ -1,5 +1,8 @@
 Revision history for Digest-EdonR
 
+0.04  Tue Nov 30 00:20:34 UTC 2010
+    - Fix for Solaris.
+
 0.03  Mon Nov 29 21:27:17 UTC 2010
     - Fix for Win32.
 
