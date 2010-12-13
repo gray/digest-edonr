@@ -1,31 +1,30 @@
-/* Optimized C implementation of the tweaked Edon-R */
-#include <string.h> 
-#include "SHA3api_ref.h"
+/******************************************************************************
+ * Tweaked Edon-R implementation for SUPERCOP, based on NIST API.
+ *
+ * (C) 2010 Jorn Amundsen <jorn.amundsen@ntnu.no>
+ * ----------------------------------------------------------------------------
+ *  $Id: EdonR.c 366 2010-12-13 09:52:35Z joern $
+ *****************************************************************************/
 
-#define rotl32(x,n)   (((x) << n) | ((x) >> (32 - n)))
-#define rotr32(x,n)   (((x) >> n) | ((x) << (32 - n)))
-
-#define rotl64(x,n)   (((x) << n) | ((x) >> (64 - n)))
-#define rotr64(x,n)   (((x) >> n) | ((x) << (64 - n)))
+#include "edonr.h"
 
 /* EdonR224 initial double chaining pipe */
-const u_int32_t i224p2[16] =
-{   0x00010203ul, 0x04050607ul, 0x08090a0bul, 0x0c0d0e0ful,
+const uint32_t i224p2[16] = {
+    0x00010203ul, 0x04050607ul, 0x08090a0bul, 0x0c0d0e0ful,
     0x10111213ul, 0x14151617ul, 0x18191a1bul, 0x1c1d1e1ful,
     0x20212223ul, 0x24252627ul, 0x28292a2bul, 0x2c2d2e2ful,
     0x30313233ul, 0x34353637ul, 0x38393a3bul, 0x3c3d3e3ful,
 };
 /* EdonR256 initial double chaining pipe */
-const u_int32_t i256p2[16] =
-{   0x40414243ul, 0x44454647ul, 0x48494a4bul, 0x4c4d4e4ful,
+const uint32_t i256p2[16] = {
+    0x40414243ul, 0x44454647ul, 0x48494a4bul, 0x4c4d4e4ful,
     0x50515253ul, 0x54555657ul, 0x58595a5bul, 0x5c5d5e5ful,
     0x60616263ul, 0x64656667ul, 0x68696a6bul, 0x6c6d6e6ful,
     0x70717273ul, 0x74757677ul, 0x78797a7bul, 0x7c7d7e7ful,
 };
 
 /* EdonR384 initial double chaining pipe */
-const u_int64_t i384p2[16] =
-{
+const uint64_t i384p2[16] = {
     0x0001020304050607ull, 0x08090a0b0c0d0e0full,
     0x1011121314151617ull, 0x18191a1b1c1d1e1full,
     0x2021222324252627ull, 0x28292a2b2c2d2e2full,
@@ -37,8 +36,7 @@ const u_int64_t i384p2[16] =
 };
 
 /* EdonR512 initial double chaining pipe */
-const u_int64_t i512p2[16] =
-{
+const uint64_t i512p2[16] = {
     0x8081828384858687ull, 0x88898a8b8c8d8e8full,
     0x9091929394959697ull, 0x98999a9b9c9d9e9full,
     0xa0a1a2a3a4a5a6a7ull, 0xa8a9aaabacadaeafull,
@@ -49,695 +47,601 @@ const u_int64_t i512p2[16] =
     0xf0f1f2f3f4f5f6f7ull, 0xf8f9fafbfcfdfeffull
 };
 
-#define hashState224(x)  ((x)->pipe->p256)
-#define hashState256(x)  ((x)->pipe->p256)
-#define hashState384(x)  ((x)->pipe->p512)
-#define hashState512(x)  ((x)->pipe->p512)
-
-#define Q256(x0,x1,x2,x3,x4,x5,x6,x7,y0,y1,y2,y3,y4,y5,y6,y7,z0,z1,z2,z3,z4,z5,z6,z7) \
+/* First Latin Square
+ * 0   7   1   3   2   4   6   5
+ * 4   1   7   6   3   0   5   2
+ * 7   0   4   2   5   3   1   6
+ * 1   4   0   5   6   2   7   3
+ * 2   3   6   7   1   5   0   4
+ * 5   2   3   1   7   6   4   0
+ * 3   6   5   0   4   7   2   1
+ * 6   5   2   4   0   1   3   7
+ */
+#define LS1_256(c,x0,x1,x2,x3,x4,x5,x6,x7)\
 {\
-/* First Latin Square\
-0   7   1   3   2   4   6   5\
-4   1   7   6   3   0   5   2\
-7   0   4   2   5   3   1   6\
-1   4   0   5   6   2   7   3\
-2   3   6   7   1   5   0   4\
-5   2   3   1   7   6   4   0\
-3   6   5   0   4   7   2   1\
-6   5   2   4   0   1   3   7\
-*/\
-	t8  = x0  + x4;\
-	t9  = x1  + x7;\
-	t12 = t8  + t9;\
-	t10 = x2  + x3;\
-	t11 = x5  + x6;\
-	t13 = t10 + t11;\
-    t0  = 0xaaaaaaaa +\
-	      t12     + x2          ;\
-    t1  = t12     + x3          ;\
-    t1  = rotl32((t1), 4);\
-    t2  = t12          + x6     ;\
-    t2  = rotl32((t2), 8);\
-    t3  = t13               + x7;\
-    t3  = rotl32((t3),13);\
-    t4  = x1 + t13           ;\
-    t4  = rotl32((t4),17);\
-    t5  = t8 + t10          + x5;\
-    t5  = rotl32((t5),22);\
-    t6  = x0 + t9 + t11      ;\
-    t6  = rotl32((t6),24);\
-    t7  = t13      +x4          ;\
-    t7  = rotl32((t7),29);\
+	uint32_t x04, x17, x23, x56, x07, x26;\
 \
-	t16 = t0 ^ t4;\
-	t17 = t1 ^ t7;\
-	t18 = t2 ^ t3;\
-	t19 = t5 ^ t6;\
-    t8  = t3 ^ t19    ;\
-    t9  = t2 ^ t19    ;\
-    t10 = t18     ^ t5;\
-    t11 = t16^ t1     ;\
-    t12 = t16     ^ t7;\
-    t13 = t17^ t6     ;\
-    t14 = t18     ^ t4;\
-    t15 = t0 ^ t17    ;\
-\
-/* Second Orthogonal Latin Square\
-0   4   2   3   1   6   5   7\
-7   6   3   2   5   4   1   0\
-5   3   1   6   0   2   7   4\
-1   0   5   4   3   7   2   6\
-2   1   0   7   4   5   6   3\
-3   5   7   0   6   1   4   2\
-4   7   6   1   2   0   3   5\
-6   2   4   5   7   3   0   1\
-*/\
-    t16 = y0  + y1;\
-	t17 = y2  + y5;\
-	t20 = t16 + t17;\
-	t18 = y3  + y4;\
-	t22 = t16 + t18;\
-	t19 = y6  + y7;\
-	t21 = t18 + t19;\
-	t23 = t17 + t19;\
-    t0  = 0x55555555 +\
-          t20               + y7;\
-    t1  = t22               + y6;\
-    t1  = rotl32((t1), 5);\
-    t2  = t20          + y3     ;\
-    t2  = rotl32((t2), 9);\
-    t3  = y2 + t21              ;\
-    t3  = rotl32((t3),11);\
-    t4  = t22               + y5;\
-    t4  = rotl32((t4),15);\
-    t5  = t23 + y4             ;\
-    t5  = rotl32((t5),20);\
-    t6  = y1 + t23              ;\
-    t6  = rotl32((t6),25);\
-    t7  = y0 + t21            ;\
-    t7  = rotl32((t7),27);\
-\
-	t16  = t0 ^ t1;\
-	t17  = t2 ^ t5;\
-	t18  = t3 ^ t4;\
-	t19  = t6 ^ t7;\
-    z5   = t8  + (t18     ^ t6);\
-    z6   = t9  + (t17     ^ t7);\
-    z7   = t10 + (t4 ^ t19    );\
-    z0   = t11 + (t16     ^ t5);\
-    z1   = t12 + (t2 ^ t19    );\
-    z2   = t13 + (t16     ^ t3);\
-    z3   = t14 + (t0 ^ t18    );\
-    z4   = t15 + (t1 ^ t17    );\
+	x04 = x0+x4, x17 = x1+x7, x07 = x04+x17;\
+	s0 = c    + x07 + x2;\
+	s1 = rotl32(x07 + x3, 4);\
+	s2 = rotl32(x07 + x6, 8);\
+	x23 = x2 + x3;\
+	s5 = rotl32(x04 + x23 + x5, 22);\
+	x56 = x5 + x6;\
+	s6 = rotl32(x17 + x56 + x0, 24);\
+	x26 = x23+x56;\
+	s3 = rotl32(x26 + x7, 13);\
+	s4 = rotl32(x26 + x1, 17);\
+	s7 = rotl32(x26 + x4, 29);\
 }
 
-#define Q512(x0,x1,x2,x3,x4,x5,x6,x7,y0,y1,y2,y3,y4,y5,y6,y7,z0,z1,z2,z3,z4,z5,z6,z7) \
+#define LS1_512(c,x0,x1,x2,x3,x4,x5,x6,x7)\
 {\
-/* First Latin Square\
-0   7   1   3   2   4   6   5\
-4   1   7   6   3   0   5   2\
-7   0   4   2   5   3   1   6\
-1   4   0   5   6   2   7   3\
-2   3   6   7   1   5   0   4\
-5   2   3   1   7   6   4   0\
-3   6   5   0   4   7   2   1\
-6   5   2   4   0   1   3   7\
-*/\
-	tt8  = x0 + x4;\
-	tt9  = x1 + x7;\
-	tt12 = tt8  + tt9;\
-	tt10 = x2 + x3;\
-	tt11 = x5 + x6;\
-	tt13 = tt10 + tt11;\
-    tt0  = 0xaaaaaaaaaaaaaaaaull +\
-	       tt12      + x2          ;\
-    tt1  = tt12      + x3          ;\
-    tt1  = rotl64((tt1), 5);\
-    tt2  = tt12           + x6     ;\
-    tt2  = rotl64((tt2),15);\
-    tt3  = tt13                + x7;\
-    tt3  = rotl64((tt3),22);\
-    tt4  = x1 + tt13           ;\
-    tt4  = rotl64((tt4),31);\
-    tt5  = tt8 + tt10          + x5;\
-    tt5  = rotl64((tt5),40);\
-    tt6  = x0 + tt9 + tt11     ;\
-    tt6  = rotl64((tt6),50);\
-    tt7  = tt13     + x4           ;\
-    tt7  = rotl64((tt7),59);\
+	uint64_t x04, x17, x23, x56, x07, x26;\
 \
-	tt16 = tt0 ^ tt4;\
-	tt17 = tt1 ^ tt7;\
-	tt18 = tt2 ^ tt3;\
-	tt19 = tt5 ^ tt6;\
-    tt8  = tt3 ^ tt19    ;\
-    tt9  = tt2 ^ tt19    ;\
-    tt10 = tt18     ^ tt5;\
-    tt11 = tt16^ tt1     ;\
-    tt12 = tt16     ^ tt7;\
-    tt13 = tt17^ tt6     ;\
-    tt14 = tt18     ^ tt4;\
-    tt15 = tt0 ^ tt17    ;\
-\
-/* Second Orthogonal Latin Square\
-0   4   2   3   1   6   5   7\
-7   6   3   2   5   4   1   0\
-5   3   1   6   0   2   7   4\
-1   0   5   4   3   7   2   6\
-2   1   0   7   4   5   6   3\
-3   5   7   0   6   1   4   2\
-4   7   6   1   2   0   3   5\
-6   2   4   5   7   3   0   1\
-*/\
-    tt16 = y0  + y1;\
-	tt17 = y2  + y5;\
-	tt20 = tt16 + tt17;\
-	tt18 = y3  + y4;\
-	tt22 = tt16 + tt18;\
-	tt19 = y6  + y7;\
-	tt21 = tt18 + tt19;\
-	tt23 = tt17 + tt19;\
-    tt0  = 0x5555555555555555ull +\
-           tt20               + y7;\
-    tt1  = tt22               + y6;\
-    tt1  = rotl64((tt1),10);\
-    tt2  = tt20          + y3     ;\
-    tt2  = rotl64((tt2),19);\
-    tt3  = y2 + tt21              ;\
-    tt3  = rotl64((tt3),29);\
-    tt4  = tt22               + y5;\
-    tt4  = rotl64((tt4),36);\
-    tt5  = tt23+ y4           ;\
-    tt5  = rotl64((tt5),44);\
-    tt6  = y1 + tt23              ;\
-    tt6  = rotl64((tt6),48);\
-    tt7  = y0 + tt21          ;\
-    tt7  = rotl64((tt7),55);\
-\
-	tt16  = tt0 ^ tt1;\
-	tt17  = tt2 ^ tt5;\
-	tt18  = tt3 ^ tt4;\
-	tt19  = tt6 ^ tt7;\
-    z5   = tt8  + (tt18     ^ tt6);\
-    z6   = tt9  + (tt17     ^ tt7);\
-    z7   = tt10 + (tt4 ^ tt19    );\
-    z0   = tt11 + (tt16     ^ tt5);\
-    z1   = tt12 + (tt2 ^ tt19    );\
-    z2   = tt13 + (tt16     ^ tt3);\
-    z3   = tt14 + (tt0 ^ tt18    );\
-    z4   = tt15 + (tt1 ^ tt17    );\
+	x04 = x0+x4, x17 = x1+x7, x07 = x04+x17;\
+	s0 = c    + x07 + x2;\
+	s1 = rotl64(x07 + x3, 5);\
+	s2 = rotl64(x07 + x6, 15);\
+	x23 = x2 + x3;\
+	s5 = rotl64(x04 + x23 + x5, 40);\
+	x56 = x5 + x6;\
+	s6 = rotl64(x17 + x56 + x0, 50);\
+	x26 = x23+x56;\
+	s3 = rotl64(x26 + x7, 22);\
+	s4 = rotl64(x26 + x1, 31);\
+	s7 = rotl64(x26 + x4, 59);\
 }
+
+/* Second Orthogonal Latin Square
+ * 0   4   2   3   1   6   5   7
+ * 7   6   3   2   5   4   1   0
+ * 5   3   1   6   0   2   7   4
+ * 1   0   5   4   3   7   2   6
+ * 2   1   0   7   4   5   6   3
+ * 3   5   7   0   6   1   4   2
+ * 4   7   6   1   2   0   3   5
+ * 6   2   4   5   7   3   0   1
+*/
+#define LS2_256(c,y0,y1,y2,y3,y4,y5,y6,y7)\
+{\
+	uint32_t y01, y25, y34, y67, y04, y05, y27, y37;\
+\
+	y01 = y0+y1, y25 = y2+y5, y05 = y01+y25;\
+    t0  = ~c  + y05 + y7;\
+	t2 = rotl32(y05 + y3, 9);\
+	y34 = y3+y4, y04 = y01+y34;\
+	t1 = rotl32(y04 + y6, 5);\
+	t4 = rotl32(y04 + y5, 15);\
+	y67 = y6+y7, y37 = y34+y67;\
+	t3 = rotl32(y37 + y2, 11);\
+	t7 = rotl32(y37 + y0, 27);\
+	y27 = y25+y67;\
+	t5 = rotl32(y27 + y4, 20);\
+	t6 = rotl32(y27 + y1, 25);\
+}
+
+#define LS2_512(c,y0,y1,y2,y3,y4,y5,y6,y7)\
+{\
+	uint64_t y01, y25, y34, y67, y04, y05, y27, y37;\
+\
+	y01 = y0+y1, y25 = y2+y5, y05 = y01+y25;\
+    t0  = ~c  + y05 + y7;\
+	t2 = rotl64(y05 + y3, 19);\
+	y34 = y3+y4, y04 = y01+y34;\
+	t1 = rotl64(y04 + y6, 10);\
+	t4 = rotl64(y04 + y5, 36);\
+	y67 = y6+y7, y37 = y34+y67;\
+	t3 = rotl64(y37 + y2, 29);\
+	t7 = rotl64(y37 + y0, 55);\
+	y27 = y25+y67;\
+	t5 = rotl64(y27 + y4, 44);\
+	t6 = rotl64(y27 + y1, 48);\
+}
+
+#define quasi_exform256(r0,r1,r2,r3,r4,r5,r6,r7)\
+{\
+	uint32_t s04, s17, s23, s56, t01, t25, t34, t67;\
+\
+	s04 = s0 ^ s4, t01 = t0 ^ t1;\
+	r0 = (s04 ^ s1) + (t01 ^ t5);\
+	t67 = t6 ^ t7;\
+	r1 = (s04 ^ s7) + (t2 ^ t67);\
+	s23 = s2 ^ s3;\
+	r7 = (s23 ^ s5) + (t4 ^ t67);\
+	t34 = t3 ^ t4;\
+	r3 = (s23 ^ s4) + (t0 ^ t34);\
+	s56 = s5 ^ s6;\
+	r5 = (s3 ^ s56) + (t34 ^ t6);\
+	t25 = t2 ^ t5;\
+	r6 = (s2 ^ s56) + (t25 ^ t7);\
+	s17 = s1 ^ s7;\
+	r4 = (s0 ^ s17) + (t1 ^ t25);\
+	r2 = (s17 ^ s6) + (t01 ^ t3);\
+}
+
+#define quasi_exform512(r0,r1,r2,r3,r4,r5,r6,r7)\
+{\
+	uint64_t s04, s17, s23, s56, t01, t25, t34, t67;\
+\
+	s04 = s0 ^ s4, t01 = t0 ^ t1;\
+	r0 = (s04 ^ s1) + (t01 ^ t5);\
+	t67 = t6 ^ t7;\
+	r1 = (s04 ^ s7) + (t2 ^ t67);\
+	s23 = s2 ^ s3;\
+	r7 = (s23 ^ s5) + (t4 ^ t67);\
+	t34 = t3 ^ t4;\
+	r3 = (s23 ^ s4) + (t0 ^ t34);\
+	s56 = s5 ^ s6;\
+	r5 = (s3 ^ s56) + (t34 ^ t6);\
+	t25 = t2 ^ t5;\
+	r6 = (s2 ^ s56) + (t25 ^ t7);\
+	s17 = s1 ^ s7;\
+	r4 = (s0 ^ s17) + (t1 ^ t25);\
+	r2 = (s17 ^ s6) + (t01 ^ t3);\
+}
+
+static DataLength
+Q256(DataLength bitlen, const uint32_t *data, uint32_t *restrict p)
+{
+	DataLength bl;
+
+	for (bl = bitlen; bl >= EdonR256_BLOCK_BITSIZE;
+         bl -= EdonR256_BLOCK_BITSIZE, data += 16) {
+		uint32_t s0, s1, s2, s3, s4, s5, s6, s7, t0, t1, t2, t3, t4, t5, t6, t7;
+		uint32_t p0, p1, p2, p3, p4, p5, p6, p7, q0, q1, q2, q3, q4, q5, q6, q7;
+		const uint32_t defix = 0xaaaaaaaa;
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		uint32_t swp0, swp1, swp2, swp3, swp4, swp5, swp6, swp7, swp8,
+			swp9, swp10, swp11, swp12, swp13, swp14, swp15;
+#define d(j) swp##j
+#define s32(j) ld_swap32((uint32_t *)data+j, swp##j)
+#else
+#define d(j) data[j]
+#endif
+
+		/* First row of quasigroup e-transformations */
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		s32( 8); s32( 9); s32(10); s32(11); s32(12); s32(13); s32(14); s32(15);
+#endif
+		LS1_256(defix,d(15),d(14),d(13),d(12),d(11),d(10),d( 9),d( 8));
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		s32( 0); s32( 1); s32( 2); s32( 3); s32( 4); s32( 5); s32( 6); s32( 7);
+#undef s32
+#endif
+		LS2_256(defix,d( 0),d( 1),d( 2),d( 3),d( 4),d( 5),d( 6),d( 7));
+		quasi_exform256( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_256(defix,d( 8),d( 9),d(10),d(11),d(12),d(13),d(14),d(15));
+		quasi_exform256( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Second row of quasigroup e-transformations */
+		LS1_256(defix,p[ 8],p[ 9],p[10],p[11],p[12],p[13],p[14],p[15]);
+		LS2_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform256( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_256(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		quasi_exform256( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Third row of quasigroup e-transformations */
+		LS1_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_256(defix,p[ 0],p[ 1],p[ 2],p[ 3],p[ 4],p[ 5],p[ 6],p[ 7]);
+		quasi_exform256( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_256(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		LS2_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform256( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Fourth row of quasigroup e-transformations */
+		LS1_256(defix,d( 7),d( 6),d( 5),d( 4),d( 3),d( 2),d( 1),d( 0));
+		LS2_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform256( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_256(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_256(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		quasi_exform256( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Edon-R tweak on the original SHA-3 Edon-R submission. */
+		p[ 0] ^= d( 8) ^ p0;
+		p[ 1] ^= d( 9) ^ p1;
+		p[ 2] ^= d(10) ^ p2;
+		p[ 3] ^= d(11) ^ p3;
+		p[ 4] ^= d(12) ^ p4;
+		p[ 5] ^= d(13) ^ p5;
+		p[ 6] ^= d(14) ^ p6;
+		p[ 7] ^= d(15) ^ p7;
+		p[ 8] ^= d( 0) ^ q0;
+		p[ 9] ^= d( 1) ^ q1;
+		p[10] ^= d( 2) ^ q2;
+		p[11] ^= d( 3) ^ q3;
+		p[12] ^= d( 4) ^ q4;
+		p[13] ^= d( 5) ^ q5;
+		p[14] ^= d( 6) ^ q6;
+		p[15] ^= d( 7) ^ q7;
+	}
+
+#undef d
+	return bitlen - bl;
+}
+
+#if defined(__IBMC__) && defined(_AIX) && defined(__64BIT__)
+static inline DataLength
+#else
+static DataLength
+#endif
+Q512(DataLength bitlen, const uint64_t *data, uint64_t *restrict p)
+{
+	DataLength bl;
+
+	for (bl = bitlen; bl >= EdonR512_BLOCK_BITSIZE;
+         bl -= EdonR512_BLOCK_BITSIZE, data += 16) {
+		uint64_t s0, s1, s2, s3, s4, s5, s6, s7, t0, t1, t2, t3, t4, t5, t6, t7;
+		uint64_t p0, p1, p2, p3, p4, p5, p6, p7, q0, q1, q2, q3, q4, q5, q6, q7;
+		const uint64_t defix = 0xaaaaaaaaaaaaaaaaull;
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		uint64_t swp0, swp1, swp2, swp3, swp4, swp5, swp6, swp7, swp8,
+			swp9, swp10, swp11, swp12, swp13, swp14, swp15;
+#define d(j) swp##j
+#define s64(j) ld_swap64((uint64_t *)data+j, swp##j)
+#else
+#define d(j) data[j]
+#endif
+
+		/* First row of quasigroup e-transformations */
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		s64( 8); s64( 9); s64(10); s64(11); s64(12); s64(13); s64(14); s64(15);
+#endif
+		LS1_512(defix,d(15),d(14),d(13),d(12),d(11),d(10),d( 9),d( 8));
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		s64( 0); s64( 1); s64( 2); s64( 3); s64( 4); s64( 5); s64( 6); s64( 7);
+#undef s64
+#endif
+		LS2_512(defix,d( 0),d( 1),d( 2),d( 3),d( 4),d( 5),d( 6),d( 7));
+		quasi_exform512( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_512(defix,d( 8),d( 9),d(10),d(11),d(12),d(13),d(14),d(15));
+		quasi_exform512( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Second row of quasigroup e-transformations */
+		LS1_512(defix,p[ 8],p[ 9],p[10],p[11],p[12],p[13],p[14],p[15]);
+		LS2_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform512( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_512(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		quasi_exform512( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Third row of quasigroup e-transformations */
+		LS1_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_512(defix,p[ 0],p[ 1],p[ 2],p[ 3],p[ 4],p[ 5],p[ 6],p[ 7]);
+		quasi_exform512( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_512(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		LS2_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform512( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Fourth row of quasigroup e-transformations */
+		LS1_512(defix,d( 7),d( 6),d( 5),d( 4),d( 3),d( 2),d( 1),d( 0));
+		LS2_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		quasi_exform512( p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+
+		LS1_512(defix,   p0,   p1,   p2,   p3,   p4,   p5,   p6,   p7);
+		LS2_512(defix,   q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+		quasi_exform512( q0,   q1,   q2,   q3,   q4,   q5,   q6,   q7);
+
+		/* Edon-R tweak on the original SHA-3 Edon-R submission. */
+		p[ 0] ^= d( 8) ^ p0;
+		p[ 1] ^= d( 9) ^ p1;
+		p[ 2] ^= d(10) ^ p2;
+		p[ 3] ^= d(11) ^ p3;
+		p[ 4] ^= d(12) ^ p4;
+		p[ 5] ^= d(13) ^ p5;
+		p[ 6] ^= d(14) ^ p6;
+		p[ 7] ^= d(15) ^ p7;
+		p[ 8] ^= d( 0) ^ q0;
+		p[ 9] ^= d( 1) ^ q1;
+		p[10] ^= d( 2) ^ q2;
+		p[11] ^= d( 3) ^ q3;
+		p[12] ^= d( 4) ^ q4;
+		p[13] ^= d( 5) ^ q5;
+		p[14] ^= d( 6) ^ q6;
+		p[15] ^= d( 7) ^ q7;
+	}
+
+#undef d
+	return bitlen - bl;
+}
+
 
 HashReturn Init(hashState *state, int hashbitlen)
 {
-	switch(hashbitlen)
-	{
+	switch (hashbitlen) {
 		case 224:
 		state->hashbitlen = 224;
-		// #1 Between comments #1 and #2 add algorithm specific initialization
 		state->bits_processed = 0;
 		state->unprocessed_bits = 0;
-		memcpy(hashState224(state)->DoublePipe, i224p2,  16 * sizeof(u_int32_t));
-		// #2 Between comments #1 and #2 add algorithm specific initialization
-		return(SUCCESS);
+		memcpy(hashState224(state)->DoublePipe, i224p2,  16 * sizeof(uint32_t));
+		return SUCCESS;
 
 		case 256:
 		state->hashbitlen = 256;
-		// #1 Between comments #1 and #2 add algorithm specific initialization
 		state->bits_processed = 0;
 		state->unprocessed_bits = 0;
-		memcpy(hashState256(state)->DoublePipe, i256p2,  16 * sizeof(u_int32_t));
-		// #2 Between comments #1 and #2 add algorithm specific initialization
-		return(SUCCESS);
+		memcpy(hashState256(state)->DoublePipe, i256p2,  16 * sizeof(uint32_t));
+		return SUCCESS;
 
 		case 384:		
 		state->hashbitlen = 384;
-		// #1 Between comments #1 and #2 add algorithm specific initialization
 		state->bits_processed = 0;
 		state->unprocessed_bits = 0;
-		memcpy(hashState384(state)->DoublePipe, i384p2,  16 * sizeof(u_int64_t));
-		// #2 Between comments #1 and #2 add algorithm specific initialization
-		return(SUCCESS);
+		memcpy(hashState384(state)->DoublePipe, i384p2,  16 * sizeof(uint64_t));
+		return SUCCESS;
 
 		case 512:
 		state->hashbitlen = 512;
-		// #1 Between comments #1 and #2 add algorithm specific initialization
 		state->bits_processed = 0;
 		state->unprocessed_bits = 0;
-		memcpy(hashState224(state)->DoublePipe, i512p2,  16 * sizeof(u_int64_t));
-		// #2 Between comments #1 and #2 add algorithm specific initialization
-		return(SUCCESS);
+		memcpy(hashState224(state)->DoublePipe, i512p2,  16 * sizeof(uint64_t));
+		return SUCCESS;
 
-        default:    return(BAD_HASHLEN);
+        default:    return BAD_HASHLEN;
     }
 }
 
 
-
-
-HashReturn Update(hashState *state, const BitSequence *data, DataLength databitlen)
+HashReturn Update(hashState *state, const BitSequence *data,
+	DataLength databitlen)
 {
-	u_int32_t *data32, *p256;
-	u_int32_t t0,  t1,  t2,  t3,  t4,  t5,  t6,  t7;
-	u_int32_t t8,  t9, t10, t11, t12, t13, t14, t15;
-	u_int32_t t16, t17,t18, t19, t20, t21, t22, t23;
-	u_int32_t p16, p17, p18, p19, p20, p21, p22, p23;
-	u_int32_t p24, p25, p26, p27, p28, p29, p30, p31;
+	uint32_t *data32;
+	uint64_t *data64;
 
-	u_int64_t *data64, *p512;
-	u_int64_t tt0,  tt1,  tt2,  tt3,  tt4,  tt5,  tt6,  tt7;
-	u_int64_t tt8,  tt9, tt10, tt11, tt12, tt13, tt14, tt15;
-	u_int64_t tt16, tt17,tt18, tt19, tt20, tt21, tt22, tt23;
-	u_int64_t pp16, pp17, pp18, pp19, pp20, pp21, pp22, pp23;
-	u_int64_t pp24, pp25, pp26, pp27, pp28, pp29, pp30, pp31;
+	DataLength bits_processed;
 
-	int LastBytes;
 
-	switch(state->hashbitlen)
-	{
+	switch (state->hashbitlen) {
 		case 224:
 		case 256:
-			if (state->unprocessed_bits > 0)
-			{
-				if ( state->unprocessed_bits + databitlen > EdonR256_BLOCK_SIZE * 8)
-				{
+			if (state->unprocessed_bits > 0) {
+				if (state->unprocessed_bits + databitlen
+					> EdonR256_BLOCK_SIZE * 8) {
 					return BAD_CONSECUTIVE_CALL_TO_UPDATE;
-				}
-				else
-				{
-					LastBytes = (int)databitlen >> 3; // LastBytes = databitlen / 8
-					memcpy(hashState256(state)->LastPart + (state->unprocessed_bits >> 3), data, LastBytes );
+				} else {
+					/* LastBytes = databitlen / 8 */;
+					int LastBytes = (int)databitlen >> 3;
+
+					memcpy(hashState256(state)->LastPart
+						+ (state->unprocessed_bits >> 3), data, LastBytes);
 					state->unprocessed_bits += (int)databitlen;
 					databitlen = state->unprocessed_bits;
-					data32 = (u_int32_t *)hashState256(state)->LastPart;
+					data32 = (uint32_t *)hashState256(state)->LastPart;
 				}
 			}
 			else 
-				data32 = (u_int32_t *)data;
+				data32 = (uint32_t *)data;
 
-			p256   = hashState256(state)->DoublePipe;
-			while (databitlen >= EdonR256_BLOCK_SIZE * 8)
-			{
-				databitlen -= EdonR256_BLOCK_SIZE * 8;
-				// #1 Between comments #1 and #2 add algorithm specifics
-
-				state->bits_processed += EdonR256_BLOCK_SIZE * 8;
-
-				/* First row of quasigroup e-transformations */
-				Q256( data32[15],  data32[14],  data32[13],  data32[12],  data32[11],  data32[10],  data32[ 9],  data32[ 8],
-				      data32[ 0],  data32[ 1],  data32[ 2],  data32[ 3],  data32[ 4],  data32[ 5],  data32[ 6],  data32[ 7],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				      data32[ 8],  data32[ 9],  data32[10],  data32[11],  data32[12],  data32[13],  data32[14],  data32[15],
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Second row of quasigroup e-transformations */
-				Q256(   p256[ 8],    p256[ 9],    p256[10],    p256[11],    p256[12],    p256[13],    p256[14],    p256[15],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-					        p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Third row of quasigroup e-transformations */
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-					    p256[ 0],    p256[ 1],    p256[ 2],    p256[ 3],    p256[ 4],    p256[ 5],    p256[ 6],    p256[ 7],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Fourth row of quasigroup e-transformations */
-				Q256( data32[ 7],  data32[ 6],  data32[ 5],  data32[ 4],  data32[ 3],  data32[ 2],  data32[ 1],  data32[ 0],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-
-				/* This is the proposed tweak on original SHA-3 Edon-R submission.  */
-				/* Instead of the old compression function R(oldPipe, M), now the   */
-				/* compression function is: R(oldPipe, M) xor oldPipe xor M'        */
-				/* where M is represented in two parts i.e. M = (M0, M1), and       */
-				/* M' = (M1, M0).                                                   */
-				p256[ 0]^=(data32[ 8] ^ p16);
-				p256[ 1]^=(data32[ 9] ^ p17);
-				p256[ 2]^=(data32[10] ^ p18);
-				p256[ 3]^=(data32[11] ^ p19);
-				p256[ 4]^=(data32[12] ^ p20);
-				p256[ 5]^=(data32[13] ^ p21);
-				p256[ 6]^=(data32[14] ^ p22);
-				p256[ 7]^=(data32[15] ^ p23);
-				p256[ 8]^=(data32[ 0] ^ p24);
-				p256[ 9]^=(data32[ 1] ^ p25);
-				p256[10]^=(data32[ 2] ^ p26);
-				p256[11]^=(data32[ 3] ^ p27);
-				p256[12]^=(data32[ 4] ^ p28);
-				p256[13]^=(data32[ 5] ^ p29);
-				p256[14]^=(data32[ 6] ^ p30);
-				p256[15]^=(data32[ 7] ^ p31);
-
-				data32 += 16;
-			}
+			bits_processed = Q256(databitlen, data32,
+				hashState256(state)->DoublePipe);
+			state->bits_processed += bits_processed;
+			databitlen -= bits_processed;
 			state->unprocessed_bits = (int)databitlen;
-			if (databitlen > 0)
-			{
-				LastBytes = ((~(((- (int)databitlen)>>3) & 0x01ff)) + 1) & 0x01ff;  // LastBytes = Ceil(databitlen / 8)
-				memcpy(hashState256(state)->LastPart, data32, LastBytes );
+			if (databitlen > 0) {
+				/* LastBytes = Ceil(databitlen / 8) */
+				int LastBytes =
+					((~(((- (int)databitlen)>>3) & 0x01ff)) + 1) & 0x01ff;
+
+				data32 += bits_processed >> 5; /* byte size update */
+				memcpy(hashState256(state)->LastPart, data32, LastBytes);
 			}
-			// #2 Between comments #1 and #2 add algorithm specifics
-			return(SUCCESS);
+			return SUCCESS;
 
 
 		case 384:
 		case 512:
-			if (state->unprocessed_bits > 0)
-			{
-				if ( state->unprocessed_bits + databitlen > EdonR512_BLOCK_SIZE * 8)
-				{
+			if (state->unprocessed_bits > 0) {
+				if (state->unprocessed_bits + databitlen
+					> EdonR512_BLOCK_SIZE * 8) {
 					return BAD_CONSECUTIVE_CALL_TO_UPDATE;
-				}
-				else
-				{
-					LastBytes = (int)databitlen >> 3; // LastBytes = databitlen / 8
-					memcpy(hashState512(state)->LastPart + (state->unprocessed_bits >> 3), data, LastBytes );
+				} else {
+					/* LastBytes = databitlen / 8 */;
+					int LastBytes = (int)databitlen >> 3;
+
+					memcpy(hashState512(state)->LastPart
+						+ (state->unprocessed_bits >> 3), data, LastBytes);
 					state->unprocessed_bits += (int)databitlen;
 					databitlen = state->unprocessed_bits;
-					data64 = (u_int64_t *)hashState512(state)->LastPart;
+					data64 = (uint64_t *)hashState512(state)->LastPart;
 				}
 			}
 			else 
-				data64 = (u_int64_t *)data;
-
-			p512   = hashState512(state)->DoublePipe;
-			while (databitlen >= EdonR512_BLOCK_SIZE * 8)
-			{
-				databitlen -= EdonR512_BLOCK_SIZE * 8;
-				// #1 Between comments #1 and #2 add algorithm specifics
-
-				state->bits_processed += EdonR512_BLOCK_SIZE * 8;
-
-				/* First row of quasigroup e-transformations */
-				Q512( data64[15],  data64[14],  data64[13],  data64[12],  data64[11],  data64[10],  data64[ 9],  data64[ 8],
-				      data64[ 0],  data64[ 1],  data64[ 2],  data64[ 3],  data64[ 4],  data64[ 5],  data64[ 6],  data64[ 7],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				      data64[ 8],  data64[ 9],  data64[10],  data64[11],  data64[12],  data64[13],  data64[14],  data64[15],
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Second row of quasigroup e-transformations */
-				Q512(   p512[ 8],    p512[ 9],    p512[10],    p512[11],    p512[12],    p512[13],    p512[14],    p512[15],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-					       pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Third row of quasigroup e-transformations */
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-					    p512[ 0],    p512[ 1],    p512[ 2],    p512[ 3],    p512[ 4],    p512[ 5],    p512[ 6],    p512[ 7],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Fourth row of quasigroup e-transformations */
-				Q512( data64[ 7],  data64[ 6],  data64[ 5],  data64[ 4],  data64[ 3],  data64[ 2],  data64[ 1],  data64[ 0],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31);
+				data64 = (uint64_t *)data;
 
 
-				/* This is the proposed tweak on original SHA-3 Edon-R submission.  */
-				/* Instead of the old compression function R(oldPipe, M), now the   */
-				/* compression function is: R(oldPipe, M) xor oldPipe xor M'        */
-				/* where M is represented in two parts i.e. M = (M0, M1), and       */
-				/* M' = (M1, M0).                                                   */
-				p512[ 0]^=(data64[ 8] ^ pp16);
-				p512[ 1]^=(data64[ 9] ^ pp17);
-				p512[ 2]^=(data64[10] ^ pp18);
-				p512[ 3]^=(data64[11] ^ pp19);
-				p512[ 4]^=(data64[12] ^ pp20);
-				p512[ 5]^=(data64[13] ^ pp21);
-				p512[ 6]^=(data64[14] ^ pp22);
-				p512[ 7]^=(data64[15] ^ pp23);
-				p512[ 8]^=(data64[ 0] ^ pp24);
-				p512[ 9]^=(data64[ 1] ^ pp25);
-				p512[10]^=(data64[ 2] ^ pp26);
-				p512[11]^=(data64[ 3] ^ pp27);
-				p512[12]^=(data64[ 4] ^ pp28);
-				p512[13]^=(data64[ 5] ^ pp29);
-				p512[14]^=(data64[ 6] ^ pp30);
-				p512[15]^=(data64[ 7] ^ pp31);
-
-				data64 += 16;
-			}
+			bits_processed = Q512(databitlen, data64,
+				hashState512(state)->DoublePipe);
+			state->bits_processed += bits_processed;
+			databitlen -= bits_processed;
 			state->unprocessed_bits = (int)databitlen;
-			if (databitlen > 0)
-			{
-				LastBytes = ((~(((- (int)databitlen)>>3) & 0x03ff)) + 1) & 0x03ff; // LastBytes = Ceil(databitlen / 8)
-				memcpy(hashState512(state)->LastPart, data64, LastBytes );
+			if (databitlen > 0) {
+				/* LastBytes = Ceil(databitlen / 8) */
+				int LastBytes =
+					((~(((- (int)databitlen)>>3) & 0x03ff)) + 1) & 0x03ff;
+
+				data64 += bits_processed >> 6; /* byte size update */
+				memcpy(hashState512(state)->LastPart, data64, LastBytes);
 			}
-			// #2 Between comments #1 and #2 add algorithm specifics
-			return(SUCCESS);
+			return SUCCESS;
 		
-		default:    return(BAD_HASHLEN); //This should never happen
+		default:    return BAD_HASHLEN; /* This should never happen */
 	}
 }
 
 
 HashReturn Final(hashState *state, BitSequence *hashval)
 {
-	u_int32_t *data32, *p256;
-	u_int32_t t0,  t1,  t2,  t3,  t4,  t5,  t6,  t7;
-	u_int32_t t8,  t9, t10, t11, t12, t13, t14, t15;
-	u_int32_t t16, t17,t18, t19, t20, t21, t22, t23;
-	u_int32_t p16, p17, p18, p19, p20, p21, p22, p23;
-	u_int32_t p24, p25, p26, p27, p28, p29, p30, p31;
-
-	u_int64_t *data64, *p512;
-	u_int64_t tt0,  tt1,  tt2,  tt3,  tt4,  tt5,  tt6,  tt7; 
-	u_int64_t tt8,  tt9, tt10, tt11, tt12, tt13, tt14, tt15; 
-	u_int64_t tt16, tt17,tt18, tt19, tt20, tt21, tt22, tt23;
-	u_int64_t pp16, pp17, pp18, pp19, pp20, pp21, pp22, pp23;
-	u_int64_t pp24, pp25, pp26, pp27, pp28, pp29, pp30, pp31;
+	uint32_t *data32;
+ 	uint64_t *data64, num_bits;
 
 	DataLength databitlen;
-
 	int LastByte, PadOnePosition;
 
-	switch(state->hashbitlen)
-	{
+
+	num_bits = state->bits_processed + state->unprocessed_bits;
+
+	switch (state->hashbitlen) {
 		case 224:
 		case 256:
 			LastByte = (int)state->unprocessed_bits >> 3;
 			PadOnePosition = 7 - (state->unprocessed_bits & 0x07);
-			hashState256(state)->LastPart[LastByte] = hashState256(state)->LastPart[LastByte] & (0xff << (PadOnePosition + 1) )\
-				                                    ^ (0x01 << PadOnePosition);
-			data64 = (u_int64_t *)hashState256(state)->LastPart;
+			hashState256(state)->LastPart[LastByte] =
+				(hashState256(state)->LastPart[LastByte]
+				& (0xff << (PadOnePosition + 1))) ^ (0x01 << PadOnePosition);
+			data64 = (uint64_t *)hashState256(state)->LastPart;
 
-			if (state->unprocessed_bits < 448)
-			{
-				memset( (hashState256(state)->LastPart) + LastByte + 1, 0x00, EdonR256_BLOCK_SIZE - LastByte - 9 );
+			if (state->unprocessed_bits < 448) {
+				memset((hashState256(state)->LastPart) + LastByte + 1, 0x00,
+					EdonR256_BLOCK_SIZE - LastByte - 9);
 				databitlen = EdonR256_BLOCK_SIZE * 8;
-				data64[7] = state->bits_processed + state->unprocessed_bits;
-			}
-			else
-			{
-				memset( (hashState256(state)->LastPart) + LastByte + 1, 0x00, EdonR256_BLOCK_SIZE * 2 - LastByte - 9 );
+#if defined(MACHINE_IS_BIG_ENDIAN)
+				st_swap64(num_bits, data64+7);
+#else
+				data64[7] = num_bits;
+#endif
+			} else {
+				memset((hashState256(state)->LastPart) + LastByte + 1, 0x00,
+					EdonR256_BLOCK_SIZE * 2 - LastByte - 9);
 				databitlen = EdonR256_BLOCK_SIZE * 16;
-				data64[15] = state->bits_processed + state->unprocessed_bits;
+#if defined(MACHINE_IS_BIG_ENDIAN)
+				st_swap64(num_bits, data64+15);
+#else
+				data64[15] = num_bits;
+#endif
 			}
 
-			data32   = (u_int32_t *)hashState256(state)->LastPart;
-			p256     = hashState256(state)->DoublePipe;
-			while (databitlen >= EdonR256_BLOCK_SIZE * 8)
-			{
-				databitlen -= EdonR256_BLOCK_SIZE * 8;
-				// #1 Between comments #1 and #2 add algorithm specifics
-
-				/* First row of quasigroup e-transformations */
-				Q256( data32[15],  data32[14],  data32[13],  data32[12],  data32[11],  data32[10],  data32[ 9],  data32[ 8],
-				      data32[ 0],  data32[ 1],  data32[ 2],  data32[ 3],  data32[ 4],  data32[ 5],  data32[ 6],  data32[ 7],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				      data32[ 8],  data32[ 9],  data32[10],  data32[11],  data32[12],  data32[13],  data32[14],  data32[15],
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Second row of quasigroup e-transformations */
-				Q256(   p256[ 8],    p256[ 9],    p256[10],    p256[11],    p256[12],    p256[13],    p256[14],    p256[15],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-					        p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Third row of quasigroup e-transformations */
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-					    p256[ 0],    p256[ 1],    p256[ 2],    p256[ 3],    p256[ 4],    p256[ 5],    p256[ 6],    p256[ 7],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-				/* Fourth row of quasigroup e-transformations */
-				Q256( data32[ 7],  data32[ 6],  data32[ 5],  data32[ 4],  data32[ 3],  data32[ 2],  data32[ 1],  data32[ 0],
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 );
-				Q256(       p16 ,        p17 ,        p18 ,        p19 ,        p20 ,        p21 ,        p22 ,        p23 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 ,
-				            p24 ,        p25 ,        p26 ,        p27 ,        p28 ,        p29 ,        p30 ,        p31 );
-
-
-				/* This is the proposed tweak on original SHA-3 Edon-R submission.  */
-				/* Instead of the old compression function R(oldPipe, M), now the   */
-				/* compression function is: R(oldPipe, M) xor oldPipe xor M'        */
-				/* where M is represented in two parts i.e. M = (M0, M1), and       */
-				/* M' = (M1, M0).                                                   */
-				p256[ 0]^=(data32[ 8] ^ p16);
-				p256[ 1]^=(data32[ 9] ^ p17);
-				p256[ 2]^=(data32[10] ^ p18);
-				p256[ 3]^=(data32[11] ^ p19);
-				p256[ 4]^=(data32[12] ^ p20);
-				p256[ 5]^=(data32[13] ^ p21);
-				p256[ 6]^=(data32[14] ^ p22);
-				p256[ 7]^=(data32[15] ^ p23);
-				p256[ 8]^=(data32[ 0] ^ p24);
-				p256[ 9]^=(data32[ 1] ^ p25);
-				p256[10]^=(data32[ 2] ^ p26);
-				p256[11]^=(data32[ 3] ^ p27);
-				p256[12]^=(data32[ 4] ^ p28);
-				p256[13]^=(data32[ 5] ^ p29);
-				p256[14]^=(data32[ 6] ^ p30);
-				p256[15]^=(data32[ 7] ^ p31);
-
-
-				data32 += 16;
-			}
-			// #2 Between comments #1 and #2 add algorithm specifics
+			data32   = (uint32_t *)hashState256(state)->LastPart;
+			state->bits_processed += Q256(databitlen, data32,
+				hashState256(state)->DoublePipe);
 			break;
 
 		case 384:
 		case 512:
 			LastByte = (int)state->unprocessed_bits >> 3;
 			PadOnePosition = 7 - (state->unprocessed_bits & 0x07);
-			hashState512(state)->LastPart[LastByte] = hashState512(state)->LastPart[LastByte] & (0xff << (PadOnePosition + 1) )\
-				                                    ^ (0x01 << PadOnePosition);
-			data64 = (u_int64_t *)hashState512(state)->LastPart;
+			hashState512(state)->LastPart[LastByte] =
+				(hashState512(state)->LastPart[LastByte]
+				& (0xff << (PadOnePosition + 1))) ^ (0x01 << PadOnePosition);
+			data64 = (uint64_t *)hashState512(state)->LastPart;
 
-			if (state->unprocessed_bits < 960)
-			{
-				memset( (hashState512(state)->LastPart) + LastByte + 1, 0x00, EdonR512_BLOCK_SIZE - LastByte - 9 );
+			if (state->unprocessed_bits < 960) {
+				memset((hashState512(state)->LastPart) + LastByte + 1, 0x00,
+					EdonR512_BLOCK_SIZE - LastByte - 9);
 				databitlen = EdonR512_BLOCK_SIZE * 8;
-				data64[15] = state->bits_processed + state->unprocessed_bits;
-			}
-			else
-			{
-				memset( (hashState512(state)->LastPart) + LastByte + 1, 0x00, EdonR512_BLOCK_SIZE * 2 - LastByte - 9 );
+#if defined(MACHINE_IS_BIG_ENDIAN)
+				st_swap64(num_bits, data64+15);
+#else
+				data64[15] = num_bits;
+#endif
+			} else {
+				memset((hashState512(state)->LastPart) + LastByte + 1, 0x00,
+					EdonR512_BLOCK_SIZE * 2 - LastByte - 9);
 				databitlen = EdonR512_BLOCK_SIZE * 16;
-				data64[31] = state->bits_processed + state->unprocessed_bits;
+#if defined(MACHINE_IS_BIG_ENDIAN)
+				st_swap64(num_bits, data64+31);
+#else
+				data64[31] = num_bits;
+#endif
 			}
 
-			p512   = hashState512(state)->DoublePipe;
-			while (databitlen >= EdonR512_BLOCK_SIZE * 8)
-			{
-				databitlen -= EdonR512_BLOCK_SIZE * 8;
-				// #1 Between comments #1 and #2 add algorithm specifics
-
-				/* First row of quasigroup e-transformations */
-				Q512( data64[15],  data64[14],  data64[13],  data64[12],  data64[11],  data64[10],  data64[ 9],  data64[ 8],
-				      data64[ 0],  data64[ 1],  data64[ 2],  data64[ 3],  data64[ 4],  data64[ 5],  data64[ 6],  data64[ 7],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				      data64[ 8],  data64[ 9],  data64[10],  data64[11],  data64[12],  data64[13],  data64[14],  data64[15],
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Second row of quasigroup e-transformations */
-				Q512(   p512[ 8],    p512[ 9],    p512[10],    p512[11],    p512[12],    p512[13],    p512[14],    p512[15],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-					       pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Third row of quasigroup e-transformations */
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-					    p512[ 0],    p512[ 1],    p512[ 2],    p512[ 3],    p512[ 4],    p512[ 5],    p512[ 6],    p512[ 7],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 );
-
-				/* Fourth row of quasigroup e-transformations */
-				Q512( data64[ 7],  data64[ 6],  data64[ 5],  data64[ 4],  data64[ 3],  data64[ 2],  data64[ 1],  data64[ 0],
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 );
-				Q512(      pp16 ,       pp17 ,       pp18 ,       pp19 ,       pp20 ,       pp21 ,       pp22 ,       pp23 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31 ,
-				           pp24 ,       pp25 ,       pp26 ,       pp27 ,       pp28 ,       pp29 ,       pp30 ,       pp31);
-
-
-				/* This is the proposed tweak on original SHA-3 Edon-R submission.  */
-				/* Instead of the old compression function R(oldPipe, M), now the   */
-				/* compression function is: R(oldPipe, M) xor oldPipe xor M'        */
-				/* where M is represented in two parts i.e. M = (M0, M1), and       */
-				/* M' = (M1, M0).                                                   */
-				p512[ 0]^=(data64[ 8] ^ pp16);
-				p512[ 1]^=(data64[ 9] ^ pp17);
-				p512[ 2]^=(data64[10] ^ pp18);
-				p512[ 3]^=(data64[11] ^ pp19);
-				p512[ 4]^=(data64[12] ^ pp20);
-				p512[ 5]^=(data64[13] ^ pp21);
-				p512[ 6]^=(data64[14] ^ pp22);
-				p512[ 7]^=(data64[15] ^ pp23);
-				p512[ 8]^=(data64[ 0] ^ pp24);
-				p512[ 9]^=(data64[ 1] ^ pp25);
-				p512[10]^=(data64[ 2] ^ pp26);
-				p512[11]^=(data64[ 3] ^ pp27);
-				p512[12]^=(data64[ 4] ^ pp28);
-				p512[13]^=(data64[ 5] ^ pp29);
-				p512[14]^=(data64[ 6] ^ pp30);
-				p512[15]^=(data64[ 7] ^ pp31);
-
-				data64 += 16;
-			}
+			state->bits_processed += Q512(databitlen, data64,
+				hashState512(state)->DoublePipe);
 			break;
-			// #2 Between comments #1 and #2 add algorithm specifics
 		
-		default:    return(BAD_HASHLEN); //This should never happen
+		default:    return BAD_HASHLEN; /* This should never happen */
 	}
 
 
-	switch(state->hashbitlen)
-	{
+	switch (state->hashbitlen) {
 		case 224:
-			memcpy(hashval, p256 + 9, EdonR224_DIGEST_SIZE );
-			return(SUCCESS);
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		{
+			uint32_t *d32 = (uint32_t *)hashval;
+			uint32_t *s32 = hashState224(state)->DoublePipe+9;
+			int j;
+
+			for (j = 0; j < EdonR224_DIGEST_SIZE>>2; j++)
+				st_swap32(s32[j], d32+j);
+		}
+#else
+			memcpy(hashval, hashState256(state)->DoublePipe+9,
+				   EdonR224_DIGEST_SIZE);
+#endif
+			return SUCCESS;
 		case 256:
-			memcpy(hashval, p256 + 8, EdonR256_DIGEST_SIZE );
-			return(SUCCESS);
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		{
+			uint32_t *d32 = (uint32_t *)hashval;
+			uint32_t *s32 = hashState224(state)->DoublePipe+8;
+			int j;
+
+			for (j = 0; j < EdonR256_DIGEST_SIZE>>2; j++)
+				st_swap32(s32[j], d32+j);
+		}
+#else
+			memcpy(hashval, hashState256(state)->DoublePipe+8,
+				   EdonR256_DIGEST_SIZE);
+#endif
+			return SUCCESS;
 		case 384:
-			memcpy(hashval, p512 + 10, EdonR384_DIGEST_SIZE );
-			return(SUCCESS);
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		{
+			uint64_t *d64 = (uint64_t *)hashval;
+			uint64_t *s64 = hashState384(state)->DoublePipe+10;
+			int j;
+
+			for (j = 0; j < EdonR384_DIGEST_SIZE>>3; j++)
+				st_swap64(s64[j], d64+j);
+		}
+#else
+			memcpy(hashval, hashState384(state)->DoublePipe+10,
+				   EdonR384_DIGEST_SIZE);
+#endif
+			return SUCCESS;
 		case 512:
-			memcpy(hashval, p512 + 8,  EdonR512_DIGEST_SIZE );
-			return(SUCCESS);
-		default:    return(BAD_HASHLEN); //This should never happen
+#if defined(MACHINE_IS_BIG_ENDIAN)
+		{
+			uint64_t *d64 = (uint64_t *)hashval;
+			uint64_t *s64 = hashState512(state)->DoublePipe+8;
+			int j;
+
+			for (j = 0; j < EdonR512_DIGEST_SIZE>>3; j++)
+				st_swap64(s64[j], d64+j);
+		}
+#else
+			memcpy(hashval, hashState512(state)->DoublePipe+8,
+				   EdonR512_DIGEST_SIZE);
+#endif
+			return SUCCESS;
+
+		default:
+			return BAD_HASHLEN; /* This should never happen */
 	}
 }
 
-HashReturn Hash(int hashbitlen, const BitSequence *data, DataLength databitlen, BitSequence *hashval)
+
+HashReturn Hash(int hashbitlen, const BitSequence *data, DataLength databitlen,
+	BitSequence *hashval)
 {
 	HashReturn qq;
 	hashState state;
 
 	qq = Init(&state, hashbitlen);
-	if (qq != SUCCESS) return(qq);
+	if (qq != SUCCESS)
+		return qq;
 	qq = Update(&state, data, databitlen);
-	if (qq != SUCCESS) return(qq);
+	if (qq != SUCCESS)
+		return qq;
 	qq = Final(&state, hashval);
-	return(qq);
+	return qq;
 }
